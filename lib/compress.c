@@ -493,6 +493,8 @@ static int erofs_get_compress_algorithm_id(const char *name)
 {
 	if (!strcmp(name, "lz4") || !strcmp(name, "lz4hc"))
 		return Z_EROFS_COMPRESSION_LZ4;
+	if (!strcmp(name, "lzma"))
+		return Z_EROFS_COMPRESSION_LZMA;
 	return -ENOTSUP;
 }
 
@@ -511,7 +513,8 @@ int z_erofs_compress_init(void)
 	 * clear LZ4_0PADDING feature for old kernel compatibility.
 	 */
 	if (!cfg.c_compr_alg_master ||
-	    strncmp(cfg.c_compr_alg_master, "lz4", 3))
+	    (strncmp(cfg.c_compr_alg_master, "lz4", 3) &&
+	     strcmp(cfg.c_compr_alg_master, "lzma")))
 		erofs_sb_clear_lz4_0padding();
 
 	if (!cfg.c_compr_alg_master)
