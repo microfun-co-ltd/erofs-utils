@@ -20,8 +20,6 @@
 #include "compressor.h"
 
 static struct erofs_compress compresshandle;
-static int compressionlevel;
-
 static struct z_erofs_map_header mapheader;
 
 struct z_erofs_vle_compress_ctx {
@@ -165,8 +163,7 @@ static int vle_compress_one(struct erofs_inode *inode,
 		}
 
 		count = len;
-		ret = erofs_compress_destsize(h, compressionlevel,
-					      ctx->queue + ctx->head,
+		ret = erofs_compress_destsize(h, ctx->queue + ctx->head,
 					      &count, dst, EROFS_BLKSIZ);
 		if (ret <= 0) {
 			if (ret != -EAGAIN) {
@@ -520,7 +517,11 @@ int z_erofs_compress_init(void)
 	if (!cfg.c_compr_alg_master)
 		return 0;
 
-	compressionlevel = cfg.c_compr_level_master < 0 ?
+	ret = erofs_compressor_setlevel(&compresshandle, cfg.c_compr_level_master);
+	if (ret)
+		return ret;
+
+	compresshandle.compression_level = cfg.c_compr_level_master < 0 ?
 		compresshandle.alg->default_level :
 		cfg.c_compr_level_master;
 
