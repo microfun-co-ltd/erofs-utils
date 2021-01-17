@@ -146,9 +146,10 @@ static int z_erofs_read_data(struct erofs_inode *inode, char *buffer,
 		if (ret < 0)
 			return -EIO;
 
-		algorithmformat = map.m_flags & EROFS_MAP_ZIPPED ?
-						Z_EROFS_COMPRESSION_LZ4 :
-						Z_EROFS_COMPRESSION_SHIFTED;
+		if (map.m_flags & EROFS_MAP_ZIPPED)
+			algorithmformat = inode->z_algorithmtype[0];
+		else
+			algorithmformat = Z_EROFS_COMPRESSION_SHIFTED;
 
 		/*
 		 * trim to the needed size if the returned extent is quite
