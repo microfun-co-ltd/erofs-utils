@@ -138,6 +138,22 @@ static int legacy_load_cluster_from_disk(struct z_erofs_maprecorder *m,
 		}
 		m->delta[1] = le16_to_cpu(di->di_u.delta[1]);
 		break;
+
+#define HW_COMPAT_DELTA0_LO_BITS                4
+#define HW_COMPAT_DELTA0_HI_MASK                ((1 << 4) - 1)
+#define HW_COMPAT_ADVISE_DELTA0_HI_SHIFT        4
+
+        case Z_EROFS_VLE_CLUSTER_TYPE_RESERVED:
+                m->pblk = le32_to_cpu(di->di_u.blkaddr);
+                m->delta[0] = (((advise >> HW_COMPAT_ADVISE_DELTA0_HI_SHIFT) &
+                                HW_COMPAT_DELTA0_HI_MASK) <<
+                                HW_COMPAT_DELTA0_LO_BITS) |
+                                (le16_to_cpu((di)->di_clusterofs) >>
+                                 vi->z_logical_clusterbits);
+                m->clusterofs = le16_to_cpu((di)->di_clusterofs) &
+                                ((1 << vi->z_logical_clusterbits) - 1);
+                break;
+                /* fallthrough */
 	case Z_EROFS_VLE_CLUSTER_TYPE_PLAIN:
 	case Z_EROFS_VLE_CLUSTER_TYPE_HEAD:
 		m->clusterofs = le16_to_cpu(di->di_clusterofs);
@@ -363,6 +379,9 @@ static int z_erofs_extent_lookback(struct z_erofs_maprecorder *m,
 		return z_erofs_extent_lookback(m, m->delta[0]);
 	case Z_EROFS_VLE_CLUSTER_TYPE_PLAIN:
 		map->m_flags &= ~EROFS_MAP_ZIPPED;
+        case Z_EROFS_VLE_CLUSTER_TYPE_RESERVED:
+                lcn -= m->delta[0];
+                /* fallthrough */
 	case Z_EROFS_VLE_CLUSTER_TYPE_HEAD:
 		map->m_la = (lcn << lclusterbits) | m->clusterofs;
 		break;
@@ -385,7 +404,8 @@ static int z_erofs_get_extent_compressedlen(struct z_erofs_maprecorder *m,
 	int err;
 
 	DBG_BUGON(m->type != Z_EROFS_VLE_CLUSTER_TYPE_PLAIN &&
-		  m->type != Z_EROFS_VLE_CLUSTER_TYPE_HEAD);
+		  m->type != Z_EROFS_VLE_CLUSTER_TYPE_HEAD &&
+                  m->type != Z_EROFS_VLE_CLUSTER_TYPE_RESERVED);
 	if (!(map->m_flags & EROFS_MAP_ZIPPED) ||
 	    !(vi->z_advise & Z_EROFS_ADVISE_BIG_PCLUSTER_1)) {
 		map->m_plen = 1 << lclusterbits;
@@ -482,6 +502,10 @@ int z_erofs_map_blocks_iter(struct erofs_inode *vi,
 	case Z_EROFS_VLE_CLUSTER_TYPE_PLAIN:
 		if (endoff >= m.clusterofs)
 			map->m_flags &= ~EROFS_MAP_ZIPPED;
+        case Z_EROFS_VLE_CLUSTER_TYPE_RESERVED:
+                if (m.delta[0])
+                        goto nonhead;
+                /* fallthrough */
 	case Z_EROFS_VLE_CLUSTER_TYPE_HEAD:
 		if (endoff >= m.clusterofs) {
 			map->m_la = (m.lcn << lclusterbits) | m.clusterofs;
@@ -498,6 +522,7 @@ int z_erofs_map_blocks_iter(struct erofs_inode *vi,
 		map->m_flags |= EROFS_MAP_FULL_MAPPED;
 		m.delta[0] = 1;
 	case Z_EROFS_VLE_CLUSTER_TYPE_NONHEAD:
+nonhead:
 		/* get the correspoinding first chunk */
 		err = z_erofs_extent_lookback(&m, m.delta[0]);
 		if (err)
